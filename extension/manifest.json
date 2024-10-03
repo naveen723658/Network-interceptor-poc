@@ -1,0 +1,41 @@
+{
+    "manifest_version": 3,
+    "name": "Request Interceptor",
+    "version": "1.0",
+    "description": "Intercepts and captures fetch/XHR requests.",
+    "permissions": [
+      "storage",
+      "tabs"
+    ],
+    "host_permissions": [
+      "<all_urls>"
+    ],
+    "background": {
+      "service_worker": "background.js"
+    },
+    "content_scripts": [
+      {
+        "matches": [
+          "<all_urls>"
+        ],
+        "js": [
+          "content.js"
+        ],
+        "run_at": "document_start"
+      }
+    ],
+    "action": {
+      "default_popup": "popup.html"
+    },
+    "web_accessible_resources": [
+      {
+        "resources": [
+          "intercept.js"
+        ],
+        "matches": [
+          "<all_urls>"
+        ]
+      }
+    ]
+  }
+  
