@@ -1,55 +1,46 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
-import { CloudWatchLogsClient, PutLogEventsCommand } from '@aws-sdk/client-cloudwatch-logs';
+import { KinesisClient, PutRecordsCommand } from '@aws-sdk/client-kinesis';
 
-// Load environment variables from .env
 dotenv.config();
 
 const app = express();
 const port = 3000;
 
-const REGION = process.env.AWS_REGION; 
-const LOG_GROUP_NAME = 'api-logs';
-const LOG_STREAM_NAME = 'api-data'; 
+const REGION = process.env.AWS_REGION;
+const KINESIS_STREAM_NAME = 'log-data';
 
-// Configure AWS CloudWatch client
-const cloudWatchClient = new CloudWatchLogsClient({
+const kinesisClient = new KinesisClient({
   region: REGION,
   credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '', 
+    accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
   },
 });
 
-let sequenceToken = null;
-
-app.use(bodyParser.json({ limit: '1048576' })); 
-
-// Function to log data to CloudWatch
-const logToCloudWatch = async (message) => {
+const sendToKinesis = async (messages) => {
   try {
-    const logEvent = {
-      logGroupName: LOG_GROUP_NAME,
-      logStreamName: LOG_STREAM_NAME,
-      logEvents: [
-        {
-          message: JSON.stringify(message),
-          timestamp: new Date().getTime(),
-        },
-      ],
-      ...(sequenceToken && { sequenceToken }), 
+    const records = messages.map((message) => ({
+      Data: Buffer.from(JSON.stringify(message)),
+      PartitionKey: 'log-partition',
+    }));
+
+    const params = {
+      StreamName: KINESIS_STREAM_NAME,
+      Records: records,
     };
 
-    const data = await cloudWatchClient.send(new PutLogEventsCommand(logEvent));
-    sequenceToken = data.nextSequenceToken || null; 
-    console.log('Log successfully sent to CloudWatch.');
+    const data = await kinesisClient.send(new PutRecordsCommand(params));
+    console.log('Data successfully sent to Kinesis:', data);
   } catch (err) {
-    console.error('Error sending log event to CloudWatch:', err);
+    console.error('Error sending data to Kinesis:', err);
   }
 };
 
-// Endpoint to receive and forward data to CloudWatch
+app.use(bodyParser.json({ limit: '1048576' }));
+
+// Endpoint to receive and forward data to Kinesis
 app.post('/api/traffic', async (req, res) => {
   const requestData = req.body;
 
@@ -58,12 +49,10 @@ app.post('/api/traffic', async (req, res) => {
   }
 
   try {
-    // Log each captured request to CloudWatch
-    for (const message of requestData) {
-      await logToCloudWatch(message);
-    }
+    // Send the captured request data to Kinesis
+    await sendToKinesis(requestData);
 
-    res.status(200).json({ message: 'Data successfully forwarded to CloudWatch.' });
+    res.status(200).json({ message: 'Data successfully forwarded to Kinesis.' });
   } catch (error) {
     console.error('Error processing request:', error);
     res.status(500).json({ error: 'Failed to process data' });
